@@ -98,7 +98,7 @@ async def get_current_url(page: tab.Tab, discord_loop: asyncio.AbstractEventLoop
         return str(current_url)
 
 
-def sofi_run(order_obj: StockOrder, command: tuple[str, str], bot_obj: Bot | None = None, loop: asyncio.AbstractEventLoop | None = None) -> None:
+def sofi_run(order_obj: StockOrder, command: tuple[str, str] | None = None, bot_obj: Bot | None = None, loop: asyncio.AbstractEventLoop | None = None) -> None:
     """Run the SoFi process."""
     print("Initializing SoFi process...")
     load_dotenv()
@@ -114,8 +114,10 @@ def sofi_run(order_obj: StockOrder, command: tuple[str, str], bot_obj: Bot | Non
     # Get headless flag
     headless = os.getenv("HEADLESS", "true").lower() == "true"
 
-    # Set the functions to be run
-    _, second_command = command
+    # Set the function to run. fun_run() calls this without the legacy command tuple.
+    second_command = "_holdings" if order_obj.get_holdings() else "_transaction"
+    if command is not None:
+        _, second_command = command
 
     cookie_filename = None
     try:
