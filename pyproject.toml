@@ -11,21 +11,23 @@ dependencies = [
     "dspac-invest-api==0.1.4",
     "email-validator>=2.3.0",
     "fennel-invest-api==2.0.1",
-    "fidelity-api==0.0.17",
     "firstrade==0.0.39",
     "nodriver==0.47.0", # pinned until https://github.com/ultrafunkamsterdam/nodriver/pull/36 gets merged
     "publicdotcom-py==0.1.22",
     "pyotp>=2.10.0",
     "python-dotenv>=1.2.3",
+    "pytz>=2025.2",
     "requests>=2.34.2",
     "robin_stocks@git+https://github.com/NelsonDane/robin_stocks_v2@1ba446970f7bac5c4c0ac96390ae9e3f7a9b9d0e",
     "schwab-api2==0.3.0",
     "selenium>=4.38.0",
     "selenium-stealth>=1.0.6",
+    "setuptools<83",
     "tastytrade==12.4.3",
     "typer>=0.20.0",
     "vanguard-api==0.3.3",
     "webull@git+https://github.com/NelsonDane/webull@ef14ae63f9e1436fbea77fe864df54847cf2f730",
+    "zendriver==0.15.2",
 ]
 
 [dependency-groups]
@@ -69,6 +71,9 @@ ignore = [
     "PLW0717", # Login/order flows intentionally wrap large blocks in try/except
 ]
 [tool.ruff.lint.per-file-ignores]
+"src/brokerages/fidelity_api.py" = [
+    "ALL", # Ported browser automation; keep behavior aligned with AutoRSA-GUI.
+]
 "src/brokerages/*" = [
     "PLR0913", # Allow too many arguments
     "PLR1702", # Allow many nested blocks

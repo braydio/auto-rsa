@@ -21,17 +21,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 && rm -rf /var/lib/apt/lists/*
 
 # Install Python
-COPY pyproject.toml .
+COPY pyproject.toml uv.lock ./
 RUN uv python install
 
-# UV sync with cache
-RUN --mount=type=cache,target=/root/.cache/uv \
-    --mount=type=bind,source=uv.lock,target=uv.lock \
-    --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
-    uv sync --frozen --no-install-project --no-dev --no-editable
+# UV sync
+RUN uv sync --frozen --no-install-project --no-dev --no-editable
 COPY . /app
-RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-dev --no-editable
+RUN uv sync --frozen --no-dev --no-editable
 
 FROM alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b AS unixifier
 
@@ -64,15 +60,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 && rm -rf /var/lib/apt/lists/*
 
 # Install python and dependencies
-COPY --from=builder --chown=python:python /python /python
-COPY --from=builder /app/.venv /app/.venv
+COPY --from=builder --chown=appuser:appuser /python /python
+COPY --from=builder --chown=appuser:appuser /app/.venv /app/.venv
 ENV PATH="/app/.venv/bin:$PATH"
 
 # Install playwright
 RUN playwright install firefox
 
 # Set the entrypoint to our entrypoint.sh
-COPY --from=unixifier --chmod=755 /app/entrypoint.sh /app/entrypoint.sh
+COPY --from=unixifier /app/entrypoint.sh /app/entrypoint.sh
+RUN chmod 755 /app/entrypoint.sh
 
 # Switch to non-root user
 USER appuser

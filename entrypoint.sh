@@ -3,6 +3,7 @@ set -euo pipefail
 
 TMPDIR=/tmp/xvfb
 mkdir -p "$TMPDIR"
+rm -f /tmp/.X99-lock
 rm -f "$TMPDIR/.X99-lock"
 
 echo "Starting X virtual framebuffer (Xvfb) in background..."

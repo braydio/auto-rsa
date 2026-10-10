@@ -115,6 +115,7 @@ def fun_run(  # ruff: ignore[complex-structure, too-many-branches, too-many-stat
                         order_obj=order_obj,
                         bot_obj=bot_obj,
                         loop=loop,
+                        docker_mode=docker_mode,
                     )
                 case BrokerName.FIRSTRADE:
                     success = firstrade_init(bot_obj=bot_obj, loop=loop)

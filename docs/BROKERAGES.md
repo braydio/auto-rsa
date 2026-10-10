@@ -49,15 +49,23 @@ Required `.env` variables:
 To get your Personal Access Token (PAT), generate one from your [Fennel Dashboard](https://dash.fennel.com/).
 
 ### Fidelity
-Made by [kennyboy106](https://github.com/kennyboy106) using the [fidelity-api](https://github.com/kennyboy106/fidelity-api). Go give them a ⭐
+Fidelity uses the Zendriver browser workflow ported from AutoRSA-GUI. It supports
+authenticator codes, SMS or phone-call codes, Fidelity app push approval,
+alternate verification-method screens, CSV-based holdings, and Fidelity's
+expanded trade ticket.
 
 Required `.env` variables:
 - `FIDELITY_USERNAME`
 - `FIDELITY_PASSWORD`
-- `FIDELITY_TOTP` (If 2fa enabled, else NA)
+- `FIDELITY_TOTP` (Authenticator secret, or `NA` to use another available 2FA method)
 
 `.env` file format:
 - `FIDELITY=FIDELITY_USERNAME:FIDELITY_PASSWORD:FIDELITY_TOTP`
+
+Separate multiple logins with commas. Browser profiles are retained under
+`creds/ZenFidelity_<number>` so Fidelity can remember trusted devices. Set
+`FIDELITY_DEBUG=true` for detailed browser-flow logs; failed pages also produce
+ignored `fidelity_error_*.png` and `fidelity_error_*.html` diagnostics.
 
 ### Firstrade
 Made by [MaxxRK](https://github.com/MaxxRK/) using the [firstrade-api](https://github.com/MaxxRK/firstrade-api). Go give them a ⭐

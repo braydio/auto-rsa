@@ -6,6 +6,9 @@ did.bin
 .vscode/launch.json
 *.pkl
 *.png
+fidelity_error_*.html
+temp_downloads/
+volumes/
 __pycache__/
 .coverage
 .pytest_cache/

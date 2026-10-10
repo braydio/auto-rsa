@@ -4,6 +4,7 @@
 
 import asyncio
 import datetime
+import json
 import operator
 import os
 import textwrap
@@ -718,6 +719,8 @@ def print_all_holdings(
     print(
         f"\n==============================\n{broker_obj.get_name()} Holdings\n==============================",
     )
+    broker_name = broker_obj.get_name()
+    snapshot_entries: list[dict[str, Any]] = []
     for key in broker_obj.get_account_numbers():
         for account in broker_obj.get_account_numbers(key):
             acc_name = f"{key} ({mask_string(account) if mask_account_number else account})"
@@ -737,6 +740,21 @@ def print_all_holdings(
                     price = holdings[stock]["price"]
                     total = holdings[stock]["total"]
                     print_string += f"{stock}: {quantity} @ ${format(price, '0.2f')} = ${format(total, '0.2f')}\n"
+                    group = key
+                    if isinstance(key, str) and key.startswith(f"{broker_name} "):
+                        group = key[len(f"{broker_name} ") :].strip() or key
+                    snapshot_entries.append(
+                        {
+                            "broker": broker_name,
+                            "group": group,
+                            "account": str(account),
+                            "ticker": stock,
+                            "quantity": quantity,
+                            "price": price,
+                            "value": total,
+                            "account_total": broker_obj.get_account_totals(key, account),
+                        }
+                    )
             print_string += f"Total: ${format(broker_obj.get_account_totals(key, account), '0.2f')}\n"
             print(print_string)
             # If somehow longer than 1024, chop and add ...
@@ -745,6 +763,35 @@ def print_all_holdings(
                 print_string[:1020] + "..." if len(print_string) > max_length else print_string,
             )
             embed["fields"].append(field)
+    snapshot_path = os.getenv("AUTO_RSA_HOLDINGS_FILE", "")
+    if snapshot_path:
+        try:
+            existing_entries: list[dict[str, Any]] = []
+            if os.path.exists(snapshot_path):
+                with open(snapshot_path, "r", encoding="utf-8") as handle:
+                    loaded = json.load(handle)
+                    if isinstance(loaded, list):
+                        existing_entries = [item for item in loaded if isinstance(item, dict)]
+
+            current_broker_key = str(broker_name).strip().lower()
+            merged_entries = [
+                item
+                for item in existing_entries
+                if str(item.get("broker", "")).strip().lower() != current_broker_key
+            ]
+            merged_entries.extend(snapshot_entries)
+
+            snapshot_dir = os.path.dirname(snapshot_path)
+            if snapshot_dir:
+                os.makedirs(snapshot_dir, exist_ok=True)
+            temp_snapshot_path = f"{snapshot_path}.tmp"
+            with open(temp_snapshot_path, "w", encoding="utf-8") as handle:
+                json.dump(merged_entries, handle)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temp_snapshot_path, snapshot_path)
+        except Exception as exc:
+            print(f"Failed to write holdings snapshot to {snapshot_path}: {exc}")
     print_and_discord(embed, loop, embed=True)
     print("==============================")
 

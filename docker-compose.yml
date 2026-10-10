@@ -1,14 +1,16 @@
 services:
     auto-rsa:
         container_name: auto-rsa
-        image: docker.io/nelsondane/auto-rsa:latest # or change to other branch you want to use
-        # build: . # uncomment this line if you want to build the image locally with "docker compose up -d --build"
+        image: auto-rsa-holdings:local
+        build: .
         restart: unless-stopped
         env_file:
             - .env
         tty: true
         volumes:
             - ./creds:/app/creds
+            - ../volumes/db:/app/volumes/db
+            - ./src:/app/src:ro
 
     watchtower:
         # Auto update the auto-rsa container every hour
@@ -23,8 +25,7 @@ services:
             # For more info on notifications see: https://containrrr.dev/watchtower/notifications/
             # - WATCHTOWER_NOTIFICATIONS=shoutrrr
             # - WATCHTOWER_NOTIFICATION_URL=discord://TOKEN@WEBHOOKID
-        command:
-            - auto-rsa
+        profiles: ["upstream-image-updates"]
         volumes:
             - /var/run/docker.sock:/var/run/docker.sock
         restart: unless-stopped

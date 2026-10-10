@@ -5,7 +5,7 @@ import os
 import re
 import traceback
 from time import sleep
-from typing import cast
+from typing import Literal, cast
 
 from discord.ext.commands import Bot
 from dotenv import load_dotenv
@@ -16,6 +16,7 @@ from selenium.common.exceptions import (
 )
 from selenium.webdriver import Chrome, Keys
 from selenium.webdriver.common.by import By
+from selenium.webdriver.remote.webelement import WebElement
 from selenium.webdriver.support import expected_conditions as ec
 from selenium.webdriver.support.wait import WebDriverWait
 
@@ -24,24 +25,83 @@ from src.helper_api import Brokerage, StockOrder, check_if_page_loaded, get_loca
 
 def _wellsfargo_error(driver: Chrome, error: str) -> None:
     print(f"Wells Fargo Error: {error}")
-    driver.save_screenshot(f"wells-fargo-error-{datetime.datetime.now(get_local_timezone())}.png")
+    with contextlib.suppress(Exception):
+        timestamp = datetime.datetime.now(get_local_timezone()).strftime("%Y%m%d-%H%M%S")
+        driver.save_screenshot(f"wells-fargo-error-{timestamp}.png")
     print(traceback.format_exc())
 
 
-def wellsfargo_init(bot_obj: Bot | None, *, docker_mode: bool = False, loop: asyncio.AbstractEventLoop | None = None) -> Brokerage | None:  # ruff: ignore[complex-structure, too-many-branches, too-many-locals, too-many-statements]
+def _parse_wellsfargo_account(value: str) -> tuple[str, str, str]:
+    """Parse username:password:phone credentials without breaking passwords containing colons."""
+    try:
+        username, password_and_phone = value.split(":", 1)
+        password, phone = password_and_phone.rsplit(":", 1)
+    except ValueError as exc:
+        msg = "WELLSFARGO must use USERNAME:PASSWORD:PHONE_LAST_FOUR format"
+        raise ValueError(msg) from exc
+    if not username or not password or not phone:
+        msg = "WELLSFARGO username, password, and phone suffix must not be empty"
+        raise ValueError(msg)
+    return username, password, phone
+
+
+def _wait_for_first_clickable(
+    driver: Chrome,
+    locators: tuple[tuple[str, str], ...],
+    timeout: int = 20,
+) -> WebElement:
+    """Return the first clickable element matching one of several stable locators."""
+    def find_element(_driver: Chrome) -> WebElement | Literal[False]:
+        for locator in locators:
+            try:
+                element = _driver.find_element(*locator)
+                if element.is_displayed() and element.is_enabled():
+                    return element
+            except NoSuchElementException:
+                continue
+        return False
+
+    return WebDriverWait(driver, timeout).until(find_element)
+
+
+def _replace_field_value(element: WebElement, value: str) -> None:
+    """Replace any browser-autofilled value and verify what Selenium entered."""
+    element.click()
+    element.send_keys(Keys.CONTROL, "a")
+    element.send_keys(Keys.BACKSPACE)
+    element.clear()
+    type_slowly(element, value)
+    entered_value = element.get_attribute("value")
+    if entered_value != value:
+        msg = f"Browser entered {len(entered_value or '')} characters; expected {len(value)}"
+        raise ValueError(msg)
+
+
+def _wellsfargo_authenticated(driver: Chrome) -> bool:
+    """Return whether Wells Fargo has reached an authenticated account page."""
+    selectors = (
+        'li[data-testid^="WELLSTRADE"]',
+        "#BROKERAGE_LINK7P",
+        'a[href*="signoff" i]',
+        'a[href*="logout" i]',
+    )
+    return any(driver.find_elements(By.CSS_SELECTOR, selector) for selector in selectors)
+
+
+def wellsfargo_init(bot_obj: Bot | None, *, docker_mode: bool = False, loop: asyncio.AbstractEventLoop | None = None) -> Brokerage | None:  # noqa: C901, PLR0912, PLR0914, PLR0915
     """Initialize the Wells Fargo API."""
     load_dotenv()
 
     if not os.getenv("WELLSFARGO"):
         print("WELLSFARGO environment variable not found.")
         return None
-    accounts = os.environ["WELLSFARGO"].strip().split(",")
+    accounts = [account.strip() for account in os.environ["WELLSFARGO"].split(",") if account.strip()]
     wf_obj = Brokerage("WELLSFARGO")
-    for wells_account in accounts:
-        index = accounts.index(wells_account) + 1
+    for index, wells_account in enumerate(accounts, start=1):
         name = f"WELLSFARGO {index}"
-        account = wells_account.split(":")
+        driver: Chrome | None = None
         try:
+            username, password, phone = _parse_wellsfargo_account(wells_account)
             print_and_discord("Logging into WELLS FARGO...", loop)
             driver = get_selenium_driver(docker_mode=docker_mode)
             if driver is None:
@@ -52,22 +112,25 @@ def wellsfargo_init(bot_obj: Bot | None, *, docker_mode: bool = False, loop: asy
             # Login
             try:
                 username_field = driver.find_element(By.XPATH, "//*[@id='j_username']")
-                type_slowly(username_field, account[0])
+                _replace_field_value(username_field, username)
                 # Wait for the password field and enter the password
                 password_field = driver.find_element(By.XPATH, "//*[@id='j_password']")
-                type_slowly(password_field, account[1])
+                _replace_field_value(password_field, password)
 
-                login_button = WebDriverWait(driver, 20).until(
-                    ec.element_to_be_clickable(
-                        (By.CSS_SELECTOR, ".Button__modern___cqCp7"),
+                login_button = _wait_for_first_clickable(
+                    driver,
+                    (
+                        (By.CSS_SELECTOR, "button[type='submit']"),
+                        (By.ID, "loginButton"),
+                        (By.XPATH, "//button[contains(normalize-space(.), 'Sign on')]"),
                     ),
                 )
                 login_button.click()
                 WebDriverWait(driver, 20).until(check_if_page_loaded)
                 print("=====================================================\n")
-            except TimeoutException:
-                print("TimeoutException: Login failed.")
-                return None
+            except TimeoutException as exc:
+                msg = "Login form or submit button was not available"
+                raise TimeoutException(msg) from exc
             wf_obj.set_logged_in_object(name, driver)
             try:
                 auth_popup = WebDriverWait(driver, 10).until(
@@ -84,7 +147,7 @@ def wellsfargo_init(bot_obj: Bot | None, *, docker_mode: bool = False, loop: asy
                 )
                 li_elements = auth_list.find_elements(By.TAG_NAME, "li")
                 for li in li_elements:
-                    if account[2] in li.text:
+                    if phone in li.text:
                         li.click()
                         break
                 print("Clicked on phone number")
@@ -107,9 +170,15 @@ def wellsfargo_init(bot_obj: Bot | None, *, docker_mode: bool = False, loop: asy
             except TimeoutException:
                 pass
 
-            WebDriverWait(driver, 20).until(
-                ec.presence_of_element_located((By.LINK_TEXT, "Locations")),
+            print_and_discord(
+                "Waiting up to 3 minutes for Wells Fargo device approval...",
+                loop,
             )
+            try:
+                WebDriverWait(driver, 180).until(_wellsfargo_authenticated)
+            except TimeoutException as exc:
+                msg = "Device approval did not reach the Wells Fargo account page within 3 minutes"
+                raise TimeoutException(msg) from exc
 
             # TODO: This will not show accounts that do not have settled cash funds  # ruff: ignore[line-contains-todo, missing-todo-author, missing-todo-link]
             account_blocks = driver.find_elements(
@@ -130,11 +199,15 @@ def wellsfargo_init(bot_obj: Bot | None, *, docker_mode: bool = False, loop: asy
                 balance = float(balance_element.text.replace("$", "").replace(",", ""))
                 wf_obj.set_account_totals(name, masked_number_text, balance)
         except Exception as e:
-            if driver:
+            if driver is not None:
                 _wellsfargo_error(driver, str(e))
-                driver.close()
-                driver.quit()
-            return None
+                with contextlib.suppress(Exception):
+                    driver.quit()
+            else:
+                print(f"Wells Fargo Error: {e}")
+                traceback.print_exc()
+            kill_all_selenium_drivers(wf_obj)
+            raise
     return wf_obj
 
 
